@@ -3,6 +3,7 @@ export { getActiveHarness, setActiveHarness } from "./runtime";
 export type { LeanApplyParams, LeanApplyResult } from "./tools/apply";
 export { leanApply, noLock, StaleStateError } from "./tools/apply";
 export type {
+  InspectedDeclaration,
   LeanSearchParams,
   LeanSearchResult,
   SearchCandidate,

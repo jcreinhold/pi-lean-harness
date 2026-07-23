@@ -144,16 +144,32 @@ describe("leanApply", () => {
     return harness;
   }
 
-  it("applies and verifies a closing candidate", async () => {
+  it("applies and verifies a closing candidate, replacing the sorry placeholder", async () => {
     const harness = await makeHarness("rollback");
     const result = await leanApply(harness, { candidate: "trivial" });
     expect(result.applied).toBe(true);
+    if (result.applied) {
+      expect(result.edit.mode).toBe("replace");
+      expect(result.edit.replacedText).toBe("sorry");
+    }
     const content = await readFile(join(dir, "Test.lean"), "utf8");
-    expect(content).toBe("theorem foo : True := by\n  trivial\n  sorry\n");
+    expect(content).toBe("theorem foo : True := by\n  trivial\n");
     expect(harness.state.lastVerification?.status).toBe("verified");
     expect(
       harness.state.successfulSteps.some((a) => a.outcome === "applied"),
     ).toBe(true);
+  });
+
+  it('inserts instead of replacing when mode is "insert"', async () => {
+    const harness = await makeHarness("rollback");
+    const result = await leanApply(harness, {
+      candidate: "trivial",
+      mode: "insert",
+    });
+    expect(result.applied).toBe(true);
+    if (result.applied) expect(result.edit.mode).toBe("insert");
+    const content = await readFile(join(dir, "Test.lean"), "utf8");
+    expect(content).toBe("theorem foo : True := by\n  trivial\n  sorry\n");
   });
 
   it("rolls back when verification fails and policy is rollback", async () => {
@@ -180,7 +196,7 @@ describe("leanApply", () => {
       expect(result.rolledBack).toBe(false);
     }
     expect(await readFile(join(dir, "Test.lean"), "utf8")).toBe(
-      "theorem foo : True := by\n  trivial\n  sorry\n",
+      "theorem foo : True := by\n  trivial\n",
     );
     expect(
       harness.state.failedAttempts.some((a) => a.outcome === "kept_unverified"),

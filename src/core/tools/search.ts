@@ -14,12 +14,32 @@ import type { LeanHarness } from "../harness";
 export interface LeanSearchParams {
   /** Free text or explicit goal/type text. Required when `for` is "text". */
   query?: string;
+  /**
+   * Fully-qualified declaration names to inspect directly. When provided,
+   * returns exact statements/docstrings/attributes instead of a goal-ranked
+   * search — use this to check a lemma exists and read its exact type before
+   * rewriting with it.
+   */
+  names?: string[];
   /** Search target: the focused goal (default) or explicit text. */
   for?: "current_goal" | "text";
   /** Include nearby usage examples from the reference index. */
   includeExamples?: boolean;
   /** Max candidates (backend cap is 20). */
   limit?: number;
+}
+
+/** A directly-inspected declaration (via `names`). */
+export interface InspectedDeclaration {
+  name: string;
+  found: boolean;
+  /** Resolution context actually used: the focused file or the global env. */
+  scope?: "file" | "global";
+  kind?: string;
+  statement?: string;
+  docstring?: string;
+  attributes?: string[];
+  message?: string;
 }
 
 export interface SearchCandidate {
@@ -38,6 +58,7 @@ export interface LeanSearchResult {
   focus?: ProofFocus;
   proofStateStatus?: string;
   candidates: SearchCandidate[];
+  declarations?: InspectedDeclaration[];
   searchTruncated: boolean;
   warnings: SemanticIssue[];
   warningsText: string;
@@ -63,6 +84,11 @@ export async function leanSearch(
   signal?: AbortSignal,
 ): Promise<LeanSearchResult> {
   await harness.ensureReady();
+
+  // Direct declaration inspection mode.
+  if (params.names && params.names.length > 0) {
+    return inspectDeclarations(harness, params.names, signal);
+  }
 
   const mode = params.for ?? (params.query ? "text" : "current_goal");
   const limit = Math.min(params.limit ?? 8, 20);
@@ -179,4 +205,97 @@ function textField(value: unknown): string | undefined {
   if (typeof value === "string") return value;
   const rendered = value as RenderedText;
   return typeof rendered.value === "string" ? rendered.value : undefined;
+}
+
+/** Cap on direct declaration inspection per call. */
+const INSPECT_LIMIT = 8;
+
+/**
+ * Direct declaration inspection: exact statements, docstrings, and
+ * attributes for fully-qualified names. Answers "does this lemma exist and
+ * what is its exact type?" without a goal-ranked search.
+ */
+async function inspectDeclarations(
+  harness: LeanHarness,
+  names: string[],
+  signal?: AbortSignal,
+): Promise<LeanSearchResult> {
+  const focusFile = harness.state.focus?.file;
+  const warnings: SemanticIssue[] = [];
+
+  const declarations = await Promise.all(
+    names
+      .slice(0, INSPECT_LIMIT)
+      .map(async (name): Promise<InspectedDeclaration> => {
+        const inspect = async (file?: string) => {
+          const envelope = await harness.client.lookup(
+            {
+              kind: "declaration",
+              name,
+              fields: ["statement", "docstring", "attributes"],
+              ...(file ? { file } : {}),
+            },
+            signal,
+          );
+          return requireData(envelope, "lean_lookup(declaration)").data;
+        };
+
+        try {
+          // Prefer the focused file's import context (project-local
+          // declarations); fall back to the global environment when the
+          // file context needs a build.
+          let data = await inspect(focusFile);
+          let scope: InspectedDeclaration["scope"] = focusFile
+            ? "file"
+            : "global";
+          if (data.status === "needs_build" && focusFile) {
+            data = await inspect(undefined);
+            scope = "global";
+          }
+          const status =
+            typeof data.status === "string" ? data.status : undefined;
+          if (status !== "found") {
+            return {
+              name,
+              found: false,
+              scope,
+              message:
+                status === "ambiguous"
+                  ? `ambiguous name; candidates: ${JSON.stringify(data.candidates ?? [])}`
+                  : status === "needs_build"
+                    ? "declaration lookup requires a project build"
+                    : "no declaration with this name is visible in the current imports",
+            };
+          }
+          const decl = (data.declaration ?? data) as Record<string, unknown>;
+          const attributes = Array.isArray(decl.attributes)
+            ? decl.attributes.filter((a): a is string => typeof a === "string")
+            : undefined;
+          return {
+            name,
+            found: true,
+            scope,
+            kind: typeof decl.kind === "string" ? decl.kind : undefined,
+            statement: textField(decl.statement),
+            docstring: textField(decl.docstring),
+            attributes,
+          };
+        } catch (error) {
+          return {
+            name,
+            found: false,
+            message: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }),
+  );
+
+  return {
+    focus: harness.state.focus,
+    candidates: [],
+    declarations,
+    searchTruncated: names.length > INSPECT_LIMIT,
+    warnings,
+    warningsText: "",
+  };
 }

@@ -21,7 +21,11 @@ export interface PreparedEdit {
   snippet: string;
   /** Boundary the snippet was inserted at. */
   boundary: ProofBoundary;
+  /** How the snippet landed: inserted at the boundary or replacing its tactic. */
+  mode: EditMode;
 }
+
+export type EditMode = "insert" | "replace";
 
 export class EditError extends Error {
   constructor(message: string) {
@@ -43,6 +47,7 @@ export function computeEdit(
   originalContent: string,
   snippet: string,
   boundary: ProofBoundary,
+  mode: EditMode = "insert",
 ): PreparedEdit {
   const span: SourceSpan = boundary.source;
   const endsWithNewline = originalContent.endsWith("\n");
@@ -61,21 +66,69 @@ export function computeEdit(
     );
   }
 
+  const next =
+    mode === "replace"
+      ? replaceAtSpan(lines, span, snippet)
+      : insertAtBoundary(lines, span, snippet, boundary.kind);
+  const newContent = next.join("\n") + (endsWithNewline ? "\n" : "");
+
+  return { path, originalContent, newContent, snippet, boundary, mode };
+}
+
+/** Insert the snippet as new tactic line(s) at the boundary. */
+function insertAtBoundary(
+  lines: string[],
+  span: SourceSpan,
+  snippet: string,
+  boundaryKind: string,
+): string[] {
   const indent = " ".repeat(Math.max(0, span.start_column - 1));
   const snippetLines = snippet
     .split("\n")
     .map((line) => (line.trim() === "" ? "" : indent + line.trimStart()));
 
   const insertAt =
-    boundary.kind === "entry" ? span.start_line - 1 : span.end_line;
-  const next = [
+    boundaryKind === "entry" ? span.start_line - 1 : span.end_line;
+  return [
     ...lines.slice(0, insertAt),
     ...snippetLines,
     ...lines.slice(insertAt),
   ];
-  const newContent = next.join("\n") + (endsWithNewline ? "\n" : "");
+}
 
-  return { path, originalContent, newContent, snippet, boundary };
+/**
+ * Replace the boundary tactic's exact span (e.g. a `sorry` placeholder) with
+ * the snippet. Column-aware: content before the span on the first line and
+ * after it on the last line is preserved. When the span starts after pure
+ * whitespace, that whitespace is reused as the snippet's indentation; when
+ * the span is inline (e.g. `:= by sorry`), the snippet is spliced in place.
+ */
+function replaceAtSpan(
+  lines: string[],
+  span: SourceSpan,
+  snippet: string,
+): string[] {
+  const startIdx = span.start_line - 1;
+  const endIdx = span.end_line - 1;
+  const prefix = (lines[startIdx] ?? "").slice(0, span.start_column - 1);
+  const suffix = (lines[endIdx] ?? "").slice(span.end_column - 1);
+
+  const trimmed = snippet.split("\n").map((line) => line.trim());
+  let newLines: string[];
+  if (/^\s*$/.test(prefix)) {
+    // Span starts after pure indentation: reuse it for every snippet line.
+    newLines = trimmed.map((line) => (line === "" ? "" : prefix + line));
+    const last = newLines.length - 1;
+    newLines[last] = (newLines[last] ?? "") + suffix;
+  } else {
+    // Inline span (e.g. `:= by sorry`): splice around the snippet as-is.
+    newLines = [...trimmed];
+    newLines[0] = prefix + (newLines[0] ?? "");
+    const last = newLines.length - 1;
+    newLines[last] = (newLines[last] ?? "") + suffix;
+  }
+
+  return [...lines.slice(0, startIdx), ...newLines, ...lines.slice(endIdx + 1)];
 }
 
 /** Read the current file bytes. */

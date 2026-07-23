@@ -23,6 +23,14 @@ const parameters = Type.Object({
         "Omit to search for the focused goal.",
     }),
   ),
+  names: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "Fully-qualified declaration names to inspect directly (max 8). Returns exact " +
+        "statements, docstrings, and attributes instead of a goal-ranked search — use " +
+        "to verify a lemma exists and read its exact type before rewriting with it.",
+    }),
+  ),
   for: Type.Optional(
     StringEnum(["current_goal", "text"] as const, {
       description:
@@ -57,6 +65,7 @@ export function createLeanSearchTool(getHarness: () => LeanHarness) {
       "Search for Lean lemmas/definitions relevant to the current goal",
     promptGuidelines: [
       "Use lean_search when stuck on a goal before inventing lemma names; it returns exact types and suggested tactics.",
+      "Before rewriting with a lemma you have not verified, pass its fully-qualified name via `names` to read its exact statement — never guess simps-projection or lemma names.",
     ],
     parameters,
 

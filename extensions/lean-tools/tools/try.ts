@@ -52,6 +52,7 @@ export function createLeanTryTool(getHarness: () => LeanHarness) {
     promptGuidelines: [
       "Use lean_try to test tactics before editing; only commit successful candidates with lean_apply.",
       "Batch several candidates in one lean_try call instead of calling it once per tactic.",
+      "Prefer one tactic per candidate so a failure localizes to a single step; after a multi-tactic candidate fails, decompose it rather than re-guessing.",
     ],
     parameters,
 

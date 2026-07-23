@@ -22,19 +22,31 @@ protocol; do not edit `.lean` proof blocks with generic file-edit tools.
    With no arguments it searches for the focused goal and returns ranked
    candidates with exact types, match reasons, and suggested tactic snippets.
    Use `for: "text"` with a `query` for goal text outside the current focus.
+   To inspect a specific lemma before rewriting with it, pass
+   `names: ["Fully.Qualified.name"]` (max 8): you get the exact statement,
+   docstring, and attributes — whether an equation is pointwise or a function
+   equality matters for `rw`. Never guess `@[simps]` projection names.
 
 3. **Test tactics — `lean_try`.**
-   Batch several `candidates` in one call. Nothing is written to disk. Exact
-   repeat failures are skipped automatically (the ledger remembers them per
-   goal fingerprint). The default accept bar is `close`; use
+   Batch several *alternative* `candidates` in one call. Nothing is written to
+   disk. Exact repeat failures are skipped automatically (the ledger remembers
+   them per goal fingerprint). The default accept bar is `close`; use
    `accept: "progress"` when you are chaining steps.
+   Prefer one tactic per candidate so a failure localizes to a single step;
+   when a multi-tactic candidate fails, decompose it rather than re-guessing
+   a larger script. When a prefix candidate succeeds, commit it with
+   `lean_apply` and `require: "make_progress"`, then re-observe with
+   `lean_state` — do not keep composing longer candidates blind.
 
 4. **Commit — `lean_apply`.**
    Only apply candidates that succeeded in `lean_try`. The tool re-tests the
    candidate, refuses to run if the file or goal changed, splices the exact
    tested text, verifies the declaration, and rolls back on verification
-   failure. After a successful apply, the goal has changed: call `lean_state`
-   again before the next step.
+   failure. A `sorry`/`admit` tactic at the focused boundary is a scaffold:
+   `lean_apply` *replaces* it with the candidate (other sorries elsewhere in
+   the file do not block verification, which is declaration-scoped). After a
+   successful apply, the goal has changed: call `lean_state` again before the
+   next step.
 
 5. **Gate — `lean_verify`.**
    Before declaring the task done, verify with `scope: "changed"` (checks the
@@ -54,3 +66,5 @@ protocol; do not edit `.lean` proof blocks with generic file-edit tools.
   connection error, tell the user to start the server inside the Lake project.
 - Do not bypass the harness by editing proof text with `edit`/`write`: those
   edits skip trial, freshness checks, verification, and the ledger.
+  (Scaffolding a new declaration *statement* with a `sorry` body via
+  `edit`/`write` is fine — fill the body through `lean_apply`.)

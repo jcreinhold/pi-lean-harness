@@ -32,6 +32,14 @@ const parameters = Type.Object({
         '"make_progress" also applies candidates that make forward progress.',
     }),
   ),
+  mode: Type.Optional(
+    StringEnum(["auto", "insert", "replace"] as const, {
+      description:
+        '"auto" (default) replaces the boundary tactic when it is a `sorry`/`admit` ' +
+        'placeholder and inserts otherwise; "insert" always inserts; "replace" ' +
+        "always replaces the boundary tactic's source span.",
+    }),
+  ),
   ...focusFields,
 });
 
@@ -57,6 +65,7 @@ export function createLeanApplyTool(getHarness: () => LeanHarness) {
     promptGuidelines: [
       "Use lean_apply only with candidates that already succeeded in lean_try during this proof state.",
       "After a successful lean_apply, call lean_state again before the next step: the goal and fingerprints have changed.",
+      'A `sorry`/`admit` tactic at the focused boundary is replaced by the candidate (filling the scaffold); anything else is inserted alongside. When a prefix candidate succeeds, apply it with require "make_progress" and re-observe with lean_state instead of bundling many steps into one candidate.',
     ],
     executionMode: "sequential",
     parameters,
@@ -84,6 +93,7 @@ export function createLeanApplyTool(getHarness: () => LeanHarness) {
         {
           candidate: params.candidate,
           require: params.require,
+          mode: params.mode,
           file: stripAt(params.file),
           declaration: params.declaration,
           proofPosition: toProofPosition(params.proofPosition),

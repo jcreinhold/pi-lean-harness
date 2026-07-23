@@ -98,6 +98,30 @@ export function formatState(result: LeanStateResult): string {
 export function formatSearch(result: LeanSearchResult): string {
   const parts: string[] = [];
   if (result.focus) parts.push(formatFocusLine(result.focus));
+
+  // Direct declaration inspection mode.
+  if (result.declarations) {
+    parts.push(`\nDeclarations (${result.declarations.length}):`);
+    for (const decl of result.declarations) {
+      if (!decl.found) {
+        parts.push(
+          `\nNOT FOUND: ${decl.name}${decl.message ? ` (${decl.message})` : ""}`,
+        );
+        continue;
+      }
+      const lines = [
+        `\n${decl.name}${decl.kind ? ` (${decl.kind})` : ""}${decl.scope === "global" ? " [global env]" : ""}`,
+      ];
+      if (decl.statement) lines.push(`   type: ${decl.statement}`);
+      if (decl.attributes && decl.attributes.length > 0) {
+        lines.push(`   attrs: ${decl.attributes.join(", ")}`);
+      }
+      if (decl.docstring) lines.push(`   doc: ${decl.docstring}`);
+      parts.push(lines.join("\n"));
+    }
+    return parts.join("\n") + result.warningsText;
+  }
+
   if (result.proofStateStatus)
     parts.push(`Proof state source: ${result.proofStateStatus}`);
   parts.push(`\nCandidates (${result.candidates.length}):`);
@@ -163,10 +187,14 @@ export function formatTry(result: LeanTryResult): string {
 
 export function formatApply(result: LeanApplyResult): string {
   if (result.applied) {
+    const action =
+      result.edit.mode === "replace"
+        ? `Replaced \`${result.edit.replacedText ?? "boundary tactic"}\` and verified: ${result.edit.snippet}`
+        : `Applied and verified: ${result.edit.snippet}`;
     const parts = [
-      `Applied and verified: ${result.edit.snippet}`,
+      action,
       formatFocusLine(result.focus),
-      `Inserted after line ${result.edit.insertedAfterLine} in ${result.edit.path}`,
+      `${result.edit.mode === "replace" ? "Edited" : "Inserted after"} line ${result.edit.insertedAfterLine} in ${result.edit.path}`,
     ];
     if (result.axioms) parts.push(`Axioms: ${JSON.stringify(result.axioms)}`);
     parts.push(

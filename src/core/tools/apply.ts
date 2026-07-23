@@ -44,6 +44,12 @@ export interface LeanApplyParams {
    * close the goal; "make_progress" also accepts a progressed state.
    */
   require?: "close_current_goal" | "make_progress";
+  /**
+   * Edit mode: "auto" (default) replaces the boundary tactic when it is a
+   * `sorry`/`admit` placeholder and inserts otherwise; "insert" always
+   * inserts; "replace" always replaces the boundary tactic's source span.
+   */
+  mode?: "auto" | "insert" | "replace";
   file?: string;
   declaration?: string;
   proofPosition?: ProofPositionSelector;
@@ -54,7 +60,13 @@ export type LeanApplyResult =
       applied: true;
       verificationStatus: "verified";
       focus: ProofFocus;
-      edit: { path: string; snippet: string; insertedAfterLine: number };
+      edit: {
+        path: string;
+        snippet: string;
+        insertedAfterLine: number;
+        mode: "insert" | "replace";
+        replacedText?: string;
+      };
       axioms?: unknown;
       warningsText: string;
     }
@@ -197,7 +209,13 @@ export async function leanApply(
         "cannot determine where to insert the tactic.",
     );
   }
-  const edit = computeEdit(path, bytes, params.candidate, boundary);
+  const edit = computeEdit(
+    path,
+    bytes,
+    params.candidate,
+    boundary,
+    chooseMode(params.mode, boundary),
+  );
 
   return withLock(path, async () => {
     // Re-check bytes inside the lock: a sibling edit may have landed.
@@ -254,6 +272,9 @@ export async function leanApply(
           path,
           snippet: params.candidate,
           insertedAfterLine: edit.boundary.source.end_line,
+          mode: edit.mode,
+          replacedText:
+            edit.mode === "replace" ? edit.boundary.excerpt.value : undefined,
         },
         axioms: row?.facts?.axioms,
         warningsText: warningsText + formatWarnings(verify.warnings),
@@ -319,6 +340,21 @@ function findBoundary(
         (b) => b.excerpt.value.trim() === position.text.trim(),
       );
   }
+}
+
+/** Tactics that are placeholders: always replaced, never inserted before. */
+const PLACEHOLDER_TACTICS = new Set(["sorry", "admit"]);
+
+function chooseMode(
+  requested: LeanApplyParams["mode"],
+  boundary: ProofBoundary,
+): "insert" | "replace" {
+  if (requested === "insert" || requested === "replace") return requested;
+  // auto: a placeholder tactic at the boundary is a scaffold to fill, so
+  // replace it; anything else gets the snippet inserted alongside it.
+  return PLACEHOLDER_TACTICS.has(boundary.excerpt.value.trim())
+    ? "replace"
+    : "insert";
 }
 
 export type { PreparedEdit };

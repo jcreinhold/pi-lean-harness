@@ -13,7 +13,7 @@ The agent never sees raw MCP tools and never chooses between "MCP", "LSP", or
 | Tool          | What it does |
 | ------------- | ------------ |
 | `lean_state`  | Current proof situation: goals, diagnostics, source freshness, and previous failed attempts for the focused declaration. Also sets the shared focus. |
-| `lean_search` | Ranked lemmas/definitions for the current goal (or explicit goal text) with exact types, match reasons, suggested tactics, docstrings, and usage examples. |
+| `lean_search` | Ranked lemmas/definitions for the current goal (or explicit goal text) with exact types, match reasons, suggested tactics, docstrings, and usage examples. `names: [...]` inspects declarations directly (exact statements/attributes) — use it instead of guessing lemma or `@[simps]` projection names. |
 | `lean_try`    | Non-mutating tactic trials against the focused goal. Batched, deduplicated against the ledger, outcomes recorded. |
 | `lean_apply`  | Compound transaction: re-test → freshness check → atomic edit → verify → rollback on failure. The only tool that writes source. |
 | `lean_verify` | Verification gate for the focused declaration, an explicit declaration, a file, or the git-changed set. |
@@ -109,8 +109,12 @@ default text carrier and structured content.
   log capture, or crash recovery).
 - **One focus at a time.** The shared focus is a single declaration/proof
   position per session branch.
-- **Insertion-based edits.** `lean_apply` inserts new tactic lines at proof
-  boundaries; it does not rewrite or delete existing tactic text.
+- **Boundary-local edits.** `lean_apply` inserts new tactic lines at proof
+  boundaries; the one exception is a `sorry`/`admit` placeholder at the
+  focused boundary, which the candidate *replaces* (filling a scaffolded
+  proof). Verification is scoped to the focused declaration, so unrelated
+  sorries elsewhere in the file do not block an apply. `mode: "replace"`
+  forces span replacement for any boundary tactic.
 - **Backend version lock.** The capability check requires the five semantic
   tools (`lean_context`, `lean_trial`, `lean_verify`, `lean_lookup`,
   `lean_status`); older servers fail fast with a clear error.

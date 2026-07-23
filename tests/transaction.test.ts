@@ -63,6 +63,77 @@ describe("computeEdit", () => {
       ),
     ).toThrow(EditError);
   });
+
+  it("replace mode swaps the boundary span for the snippet", () => {
+    // `sorry` on line 3, columns 3-8.
+    const edit = computeEdit(
+      "/p/A.lean",
+      SOURCE,
+      "trivial",
+      boundary({
+        source: { start_line: 3, start_column: 3, end_line: 3, end_column: 8 },
+        excerpt: { value: "sorry", truncated: false },
+      }),
+      "replace",
+    );
+    expect(edit.newContent).toBe(
+      "theorem foo : True := by\n  intro h\n  trivial\n",
+    );
+    expect(edit.mode).toBe("replace");
+  });
+
+  it("replace mode re-indents multi-line snippets to the boundary column", () => {
+    const edit = computeEdit(
+      "/p/A.lean",
+      SOURCE,
+      "constructor\n· trivial",
+      boundary({
+        source: { start_line: 3, start_column: 3, end_line: 3, end_column: 8 },
+        excerpt: { value: "sorry", truncated: false },
+      }),
+      "replace",
+    );
+    expect(edit.newContent).toBe(
+      "theorem foo : True := by\n  intro h\n  constructor\n  · trivial\n",
+    );
+  });
+
+  it("replace mode splices inline spans without adding indentation", () => {
+    // One-line proof: `theorem bar : True := by sorry`, sorry at cols 26-31.
+    const inline = "theorem bar : True := by sorry\n";
+    const edit = computeEdit(
+      "/p/A.lean",
+      inline,
+      "trivial",
+      boundary({
+        source: {
+          start_line: 1,
+          start_column: 26,
+          end_line: 1,
+          end_column: 31,
+        },
+        excerpt: { value: "sorry", truncated: false },
+      }),
+      "replace",
+    );
+    expect(edit.newContent).toBe("theorem bar : True := by trivial\n");
+  });
+
+  it("replace mode preserves text after the span on the same line", () => {
+    const edit = computeEdit(
+      "/p/A.lean",
+      "theorem baz : True := by\n  sorry -- TODO\n",
+      "trivial",
+      boundary({
+        source: { start_line: 2, start_column: 3, end_line: 2, end_column: 8 },
+        excerpt: { value: "sorry", truncated: false },
+      }),
+      "replace",
+    );
+    expect(edit.newContent).toBe(
+      "theorem baz : True := by\n  trivial -- TODO\n",
+    );
+  });
 });
 
 describe("commit + rollback", () => {

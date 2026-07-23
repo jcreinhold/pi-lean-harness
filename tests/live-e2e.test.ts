@@ -7,7 +7,7 @@
  * Pi tools call.
  */
 
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { ResolvedLeanHarnessConfig } from "../src/config/types";
 import { LeanHarness } from "../src/core/harness";
@@ -124,6 +124,67 @@ describe.skipIf(!LIVE)(
       } finally {
         writeFileSync("/tmp/live-e2e.log", log.join("\n"));
         await harness.client.close().catch(() => undefined);
+      }
+    }, 300_000);
+
+    it("replaces a sorry placeholder while another sorry remains in the file", async () => {
+      // Regression test for the multi-sorry deadlock report: verification is
+      // declaration-scoped, and applying a closing proof at a `sorry`
+      // boundary must REPLACE the placeholder (not insert before it), or the
+      // declaration still contains `sorry` and always fails verification.
+      const MULTI_FILE = FILE.replace(/\.lean$/, "Fill.lean");
+      const harness = new LeanHarness(config);
+      await harness.ensureReady();
+      const abs = harness.resolveProjectPath(MULTI_FILE);
+      writeFileSync(
+        abs,
+        "theorem scratch_filled : True := by\n  sorry\n\ntheorem scratch_other : True := by\n  sorry\n",
+      );
+      try {
+        try {
+          const state = await leanState(harness, {
+            file: MULTI_FILE,
+            declaration: "scratch_filled",
+            proofPosition: { kind: "default" },
+          });
+          record("multi-sorry: state", state.context);
+
+          const trial = await leanTry(harness, { candidates: ["trivial"] });
+          expect(trial.rows[0]?.status).toBe("closed");
+
+          const applied = await leanApply(harness, { candidate: "trivial" });
+          record("multi-sorry: apply", applied);
+          // If verification were module-scoped, the surviving `sorry` in
+          // scratch_other would force a rollback here.
+          expect(applied.applied).toBe(true);
+          if (applied.applied) {
+            expect(applied.edit.mode).toBe("replace");
+            expect(applied.edit.replacedText).toBe("sorry");
+          }
+
+          const content = readFileSync(abs, "utf8");
+          record("multi-sorry: file after", content);
+          expect(content).toContain("trivial");
+          expect(content).not.toMatch(/scratch_filled[\s\S]*?sorry\n\n/);
+          // The other declaration's sorry is untouched.
+          expect(content).toContain(
+            "theorem scratch_other : True := by\n  sorry",
+          );
+
+          // Declaration inspection: exact statements, not-found handling.
+          const inspected = await leanSearch(harness, {
+            names: ["Nat.add_comm", "Lean.Harness.NoSuchLemma"],
+          });
+          record("declaration inspection", inspected.declarations);
+          expect(inspected.declarations?.[0]?.found).toBe(true);
+          expect(inspected.declarations?.[0]?.statement).toBeTruthy();
+          expect(inspected.declarations?.[1]?.found).toBe(false);
+        } finally {
+          await harness.client.close().catch(() => undefined);
+        }
+      } finally {
+        rmSync(abs, { force: true });
+        writeFileSync("/tmp/live-e2e.log", log.join("\n"));
       }
     }, 300_000);
   },
