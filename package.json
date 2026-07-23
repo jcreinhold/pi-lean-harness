@@ -1,0 +1,84 @@
+{
+  "name": "pi-lean-harness",
+  "version": "0.1.0",
+  "description": "Lean-specific facade over lean-host-mcp: proof state, search, trials, transactional apply with verification and rollback",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi",
+    "lean",
+    "lean4",
+    "theorem-proving"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jcreinhold/pi-lean-harness"
+  },
+  "files": [
+    "src",
+    "extensions",
+    "skills",
+    "schema.json",
+    "README.md",
+    "!src/**/*.test.ts",
+    "!extensions/**/*.test.ts"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/lean-harness/index.ts",
+      "./extensions/lean-tools/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "dependencies": {
+    "@aliou/pi-utils-settings": "^0.17.0",
+    "@aliou/pi-utils-ui": "^0.4.0",
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "@earendil-works/pi-ai": {
+      "optional": true
+    },
+    "@earendil-works/pi-tui": {
+      "optional": true
+    },
+    "typebox": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@aliou/biome-plugins": "^0.10.0",
+    "@biomejs/biome": "^2.5.0",
+    "@earendil-works/pi-ai": "0.81.1",
+    "@earendil-works/pi-coding-agent": "0.81.1",
+    "@earendil-works/pi-tui": "0.81.1",
+    "@types/node": "^25.9.0",
+    "ts-json-schema-generator": "^2.9.0",
+    "typebox": "^1.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.8"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check",
+    "format": "biome check --write",
+    "gen:schema": "ts-json-schema-generator --path src/config/types.ts --type LeanHarnessConfig --no-type-check -o schema.json",
+    "check:schema": "ts-json-schema-generator --path src/config/types.ts --type LeanHarnessConfig --no-type-check -o /tmp/schema-check.json && diff -q schema.json /tmp/schema-check.json",
+    "test": "vitest run"
+  },
+  "packageManager": "pnpm@11.15.1"
+}

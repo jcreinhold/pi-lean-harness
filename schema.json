@@ -1,0 +1,73 @@
+{
+  "$ref": "#/definitions/LeanHarnessConfig",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "LeanApplyConfig": {
+      "additionalProperties": false,
+      "description": "Settings for the lean_apply transactional edit.",
+      "properties": {
+        "onVerifyFailure": {
+          "description": "What to do when post-edit verification fails:\n- \"rollback\": restore the original file bytes (default).\n- \"keep\": leave the edit in place and report it as unverified.",
+          "enum": [
+            "rollback",
+            "keep"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "LeanHarnessConfig": {
+      "additionalProperties": false,
+      "description": "User-facing configuration (all fields optional).",
+      "properties": {
+        "$schema": {
+          "type": "string"
+        },
+        "apply": {
+          "$ref": "#/definitions/LeanApplyConfig"
+        },
+        "exposeRawBackendTools": {
+          "description": "Reserved. Raw lean-host-mcp tools are never registered by this package; this flag is kept for a future human-debug surface.",
+          "type": "boolean"
+        },
+        "server": {
+          "$ref": "#/definitions/LeanServerConfig"
+        },
+        "tools": {
+          "$ref": "#/definitions/LeanToolsConfig"
+        }
+      },
+      "type": "object"
+    },
+    "LeanServerConfig": {
+      "additionalProperties": false,
+      "description": "Backend server connection settings.",
+      "properties": {
+        "project": {
+          "description": "Optional absolute path to the Lake project root. Forwarded to backend operations that accept a project override. When omitted, the server's own --lake-root resolution is used.",
+          "type": "string"
+        },
+        "requestTimeoutMs": {
+          "description": "Per-request timeout in milliseconds.",
+          "type": "number"
+        },
+        "url": {
+          "description": "Streamable HTTP endpoint of a running lean-host-mcp server. Start one with: lean-host-mcp serve --bind 127.0.0.1:8765",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "LeanToolsConfig": {
+      "additionalProperties": false,
+      "description": "Toggle for the lean-tools sub-extension.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  }
+}
