@@ -8,10 +8,7 @@
       "properties": {
         "onVerifyFailure": {
           "description": "What to do when post-edit verification fails:\n- \"rollback\": restore the original file bytes (default).\n- \"keep\": leave the edit in place and report it as unverified.",
-          "enum": [
-            "rollback",
-            "keep"
-          ],
+          "enum": ["rollback", "keep"],
           "type": "string"
         }
       },
