@@ -14,6 +14,7 @@ import type {
   ProofContextData,
   ProofPositionSelector,
   ProofStepTrialData,
+  ProofStepTrialEnvelope,
   SemanticEnvelope,
   VerifyData,
   VerifyTarget,
@@ -169,7 +170,7 @@ export class LeanBackendClient {
     },
     signal?: AbortSignal,
   ): Promise<SemanticEnvelope<ProofStepTrialData>> {
-    return this.callTool<ProofStepTrialData>(
+    const envelope = await this.callTool<ProofStepTrialEnvelope>(
       "lean_trial",
       this.withProject({
         kind: "proof_step",
@@ -180,6 +181,12 @@ export class LeanBackendClient {
       }),
       signal,
     );
+    // The server nests the batch under `result` next to session metadata;
+    // unwrap it so callers get the batch directly.
+    if (envelope.data?.result) {
+      return { ...envelope, data: envelope.data.result };
+    }
+    return envelope as unknown as SemanticEnvelope<ProofStepTrialData>;
   }
 
   async verify(

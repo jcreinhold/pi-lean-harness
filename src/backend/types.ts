@@ -144,9 +144,11 @@ export type TrialCandidateStatus =
 export interface TrialCandidate {
   id: string;
   status: TrialCandidateStatus;
-  snippet?: string;
+  snippet?: RenderedText | string;
   diagnostics?: DiagnosticsBlock;
-  goals_after?: string[];
+  downstream_diagnostics?: DiagnosticsBlock;
+  goals?: Array<RenderedText | string>;
+  goals_after?: Array<RenderedText | string>;
   output?: RenderedText;
 }
 
@@ -172,6 +174,16 @@ export interface ProofStepTrialData {
   candidate_limit: number;
   candidates_truncated: boolean;
   summary: TrialSummary;
+}
+
+/**
+ * The actual `data` payload of `lean_trial` (kind = "proof_step"): the batch
+ * is nested under `result` alongside session metadata.
+ */
+export interface ProofStepTrialEnvelope {
+  status?: string;
+  imports?: string[];
+  result?: ProofStepTrialData;
 }
 
 export type VerificationStatus =

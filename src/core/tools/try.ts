@@ -65,6 +65,14 @@ function meetsAccept(
   return accept === "any";
 }
 
+function textValue(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (value && typeof (value as { value?: unknown }).value === "string") {
+    return (value as { value: string }).value;
+  }
+  return undefined;
+}
+
 export async function leanTry(
   harness: LeanHarness,
   params: LeanTryParams,
@@ -132,10 +140,12 @@ export async function leanTry(
     candidatesTruncated = trial.data.candidates_truncated;
 
     for (const [index, candidate] of trial.data.candidates.entries()) {
-      const snippet = toRun[index] ?? candidate.snippet ?? "";
-      const firstError = candidate.diagnostics?.diagnostics.find(
-        (d) => d.severity === "error",
-      );
+      const snippet = toRun[index] ?? textValue(candidate.snippet) ?? "";
+      const allDiagnostics = [
+        ...(candidate.diagnostics?.diagnostics ?? []),
+        ...(candidate.downstream_diagnostics?.diagnostics ?? []),
+      ];
+      const firstError = allDiagnostics.find((d) => d.severity === "error");
       const message = firstError?.message;
       recordAttempt(harness.state, {
         file: focus.file,
@@ -145,12 +155,15 @@ export async function leanTry(
         outcome: candidate.status,
         message,
       });
+      const remainingGoals = (candidate.goals_after ?? candidate.goals)
+        ?.map(textValue)
+        .filter((g): g is string => typeof g === "string");
       rows.push({
         snippet,
         status: candidate.status,
         acceptable: meetsAccept(candidate.status, accept),
         message,
-        goalsAfter: candidate.goals_after,
+        goalsAfter: remainingGoals,
       });
     }
   }
