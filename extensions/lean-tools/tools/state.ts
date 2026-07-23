@@ -82,7 +82,11 @@ export function createLeanStateTool(getHarness: () => LeanHarness) {
         details: {
           declaration: result.focus.declaration,
           file: result.focus.file,
-          goalCount: (result.context.goals_before ?? []).length,
+          goalCount: (
+            result.context.goals_after ??
+            result.context.goals_before ??
+            []
+          ).length,
           freshness: result.freshness,
           sessionState: structuredClone(harness.state),
         },

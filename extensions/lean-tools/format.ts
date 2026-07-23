@@ -21,13 +21,44 @@ export function formatState(result: LeanStateResult): string {
   if (result.toolchain) parts.push(`Toolchain: ${result.toolchain}`);
   parts.push(`Source freshness: ${result.freshness}`);
 
-  const goals = result.context.goals_before ?? [];
-  parts.push("\nGoals:");
-  parts.push(
-    goals.length > 0
-      ? goals.map((g, i) => `${i + 1}. ${g}`).join("\n")
-      : "(none)",
-  );
+  const goalsBefore = result.context.goals_before ?? [];
+  const goalsAfter = result.context.goals_after ?? [];
+  const goalsDiffer =
+    goalsAfter.length > 0 && goalsAfter.join("\n") !== goalsBefore.join("\n");
+
+  if (goalsDiffer) {
+    parts.push("\nGoals before this tactic:");
+    parts.push(
+      goalsBefore.length > 0
+        ? goalsBefore.map((g, i) => `${i + 1}. ${g}`).join("\n")
+        : "(none)",
+    );
+    parts.push("\nGoals after this tactic (the state you are proving in):");
+    parts.push(goalsAfter.map((g, i) => `${i + 1}. ${g}`).join("\n"));
+  } else {
+    parts.push("\nGoals:");
+    parts.push(
+      goalsBefore.length > 0
+        ? goalsBefore.map((g, i) => `${i + 1}. ${g}`).join("\n")
+        : "(none)",
+    );
+  }
+
+  const boundaries = result.context.proof_boundaries ?? [];
+  if (boundaries.length > 0) {
+    parts.push("\nProof boundaries (valid proofPosition selectors):");
+    parts.push(
+      boundaries
+        .map((b) => {
+          const selector =
+            b.selector.kind === "default"
+              ? '{"kind": "default"}'
+              : `{"kind": "index", "index": ${b.selector.index}}`;
+          return `- ${selector} at line ${b.source.start_line} (${b.kind}): \`${b.excerpt.value}\``;
+        })
+        .join("\n"),
+    );
+  }
 
   const diagnostics = result.context.diagnostics;
   if (diagnostics && diagnostics.diagnostics.length > 0) {
