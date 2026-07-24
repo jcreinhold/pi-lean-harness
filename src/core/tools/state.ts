@@ -4,7 +4,12 @@
  * history — in a single call.
  */
 
-import { formatWarnings, freshnessSummary, requireData } from "../../backend";
+import {
+  formatWarnings,
+  freshnessSummary,
+  requireData,
+  withRecycleRetry,
+} from "../../backend";
 import type {
   DiagnosticsBlock,
   ProofContextData,
@@ -55,19 +60,23 @@ export async function leanState(
 
   const include = new Set(params.include ?? ["goals", "diagnostics", "ledger"]);
 
-  const envelope = await harness.client.proofContext(
-    {
-      file: focus.file,
-      declaration: focus.declaration,
-      proofPosition: focus.proofPosition,
-    },
-    signal,
-  );
   const {
     data: context,
     warnings,
     trust,
-  } = requireData(envelope, "lean_context");
+  } = await withRecycleRetry(async () =>
+    requireData(
+      await harness.client.proofContext(
+        {
+          file: focus.file,
+          declaration: focus.declaration,
+          proofPosition: focus.proofPosition,
+        },
+        signal,
+      ),
+      "lean_context",
+    ),
+  );
 
   const bytes = await readSource(harness.resolveProjectPath(focus.file));
   const sourceHash = sha256(bytes);
@@ -100,7 +109,7 @@ export async function leanState(
     freshness: freshnessSummary(trust),
     warnings,
     previousFailures: include.has("ledger")
-      ? failuresForGoal(harness.state, goalFp)
+      ? failuresForGoal(harness.state, goalFp, sourceHash)
       : [],
     projectRoot: caps.projectRoot,
     toolchain: caps.toolchain,

@@ -11,7 +11,7 @@
  *   8. Update the proof ledger.
  */
 
-import { formatWarnings, requireData } from "../../backend";
+import { formatWarnings, requireData, withRecycleRetry } from "../../backend";
 import type {
   LeanDiagnostic,
   ProofBoundary,
@@ -122,15 +122,21 @@ export async function leanApply(
   }
 
   // Step 1+2: fresh context; confirm the goal fingerprint still matches.
-  const contextEnvelope = await harness.client.proofContext(
-    {
-      file: focus.file,
-      declaration: focus.declaration,
-      proofPosition: focus.proofPosition,
-    },
-    signal,
-  );
-  const context = requireData(contextEnvelope, "lean_context").data;
+  const context = (
+    await withRecycleRetry(async () =>
+      requireData(
+        await harness.client.proofContext(
+          {
+            file: focus.file,
+            declaration: focus.declaration,
+            proofPosition: focus.proofPosition,
+          },
+          signal,
+        ),
+        "lean_context",
+      ),
+    )
+  ).data;
   const goalFp = goalFingerprint(context);
   if (
     harness.state.goalFingerprint &&
@@ -143,16 +149,20 @@ export async function leanApply(
   }
 
   // Step 3: test the exact candidate.
-  const trialEnvelope = await harness.client.trialProofStep(
-    {
-      file: focus.file,
-      declaration: focus.declaration,
-      snippets: [params.candidate],
-      proofPosition: focus.proofPosition,
-    },
-    signal,
+  const trial = await withRecycleRetry(async () =>
+    requireData(
+      await harness.client.trialProofStep(
+        {
+          file: focus.file,
+          declaration: focus.declaration,
+          snippets: [params.candidate],
+          proofPosition: focus.proofPosition,
+        },
+        signal,
+      ),
+      "lean_trial(proof_step)",
+    ),
   );
-  const trial = requireData(trialEnvelope, "lean_trial(proof_step)");
   const candidate = trial.data.candidates[0];
   const warningsText = formatWarnings(trial.warnings);
 
@@ -169,6 +179,7 @@ export async function leanApply(
     file: focus.file,
     declaration: focus.declaration,
     goalFingerprint: goalFp,
+    sourceHash: currentHash,
     snippet: params.candidate,
     outcome: candidate.status,
     message: firstError?.message,
@@ -227,22 +238,31 @@ export async function leanApply(
     }
     await commitEdit(edit);
 
-    // Step 6: verify the containing declaration.
-    const verifyEnvelope = await harness.client.verify(
-      {
-        targets: [
-          {
-            kind: "explicit",
-            file: focus.file,
-            declarations: [focus.declaration],
-          },
-        ],
-        allowSorry: false,
-        reportAxioms: true,
-      },
-      signal,
+    // Step 6: verify the containing declaration. Retry once if the worker
+    // was recycled mid-call (warning taint) or the verdict came back as
+    // `worker_recycled`, both of which make a non-positive verdict unreliable.
+    const verify = await withRecycleRetry(
+      async () =>
+        requireData(
+          await harness.client.verify(
+            {
+              targets: [
+                {
+                  kind: "explicit",
+                  file: focus.file,
+                  declarations: [focus.declaration],
+                },
+              ],
+              allowSorry: false,
+              reportAxioms: true,
+            },
+            signal,
+          ),
+          "lean_verify",
+        ),
+      (data) =>
+        data.results.some((r) => r.verification_status === "worker_recycled"),
     );
-    const verify = requireData(verifyEnvelope, "lean_verify");
     const row = verify.data.results.find(
       (r) => r.declaration === focus.declaration,
     );
@@ -260,6 +280,7 @@ export async function leanApply(
         file: focus.file,
         declaration: focus.declaration,
         goalFingerprint: goalFp,
+        sourceHash: currentHash,
         snippet: params.candidate,
         outcome: "applied",
       });
@@ -290,6 +311,7 @@ export async function leanApply(
         file: focus.file,
         declaration: focus.declaration,
         goalFingerprint: goalFp,
+        sourceHash: currentHash,
         snippet: params.candidate,
         outcome: "rolled_back",
         message: `verification: ${status}`,
@@ -299,6 +321,7 @@ export async function leanApply(
         file: focus.file,
         declaration: focus.declaration,
         goalFingerprint: goalFp,
+        sourceHash: currentHash,
         snippet: params.candidate,
         outcome: "kept_unverified",
         message: `verification: ${status}`,

@@ -34,8 +34,12 @@ export function resolveFocus(
   return {
     file,
     declaration,
-    proofPosition: override.proofPosition ??
-      state.focus?.proofPosition ?? { kind: "default" },
+    // Do NOT inherit a stored proofPosition: a position set on one call
+    // (e.g. {kind:"index", index:2}) must not silently leak into later
+    // calls that omit proofPosition, which ran tactics at a stale boundary
+    // and produced confusing "No goals to be solved" verdicts. Each call
+    // targets the pristine entry goal unless it says otherwise.
+    proofPosition: override.proofPosition ?? { kind: "default" },
   };
 }
 

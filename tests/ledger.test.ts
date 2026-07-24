@@ -40,6 +40,33 @@ describe("recordAttempt", () => {
     expect(state.failedAttempts[0]?.message).toBe("second");
   });
 
+  it("distinguishes failures by source hash: an edit that leaves the goal\n  text unchanged does not lock out a now-valid retry", () => {
+    const state = createEmptyState();
+    recordAttempt(state, {
+      ...base,
+      sourceHash: "src-a",
+      snippet: "simp",
+      outcome: "failed",
+      message: "name unresolved",
+    });
+    // Same goal and snippet, but the file changed (e.g. an import was added):
+    // this is NOT a repeat failure and must not be suppressed.
+    recordAttempt(state, {
+      ...base,
+      sourceHash: "src-b",
+      snippet: "simp",
+      outcome: "failed",
+      message: "different obstacle",
+    });
+    expect(state.failedAttempts).toHaveLength(2);
+    // hasFailedBefore keys on the source hash:
+    expect(hasFailedBefore(state, "fp1", "simp", "src-a")).toBeDefined();
+    expect(hasFailedBefore(state, "fp1", "simp", "src-b")).toBeDefined();
+    expect(hasFailedBefore(state, "fp1", "simp", "src-c")).toBeUndefined();
+    // Omitting sourceHash matches only entries that also omitted it:
+    expect(hasFailedBefore(state, "fp1", "simp")).toBeUndefined();
+  });
+
   it("caps the ledger", () => {
     const state = createEmptyState();
     for (let i = 0; i < LEDGER_CAP + 10; i++) {

@@ -11,7 +11,10 @@ export {
 export {
   formatWarnings,
   freshnessSummary,
+  hasRecycleWarning,
+  isRecycleWarning,
   type NormalizedCall,
   requireData,
+  withRecycleRetry,
 } from "./normalize";
 export type * from "./types";

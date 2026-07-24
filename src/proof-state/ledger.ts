@@ -52,7 +52,8 @@ export function recordAttempt(
   const existing = list.findIndex(
     (entry) =>
       entry.goalFingerprint === row.goalFingerprint &&
-      entry.snippet === row.snippet,
+      entry.snippet === row.snippet &&
+      entry.sourceHash === row.sourceHash,
   );
   if (existing >= 0) list.splice(existing, 1);
   list.push(row);
@@ -67,25 +68,36 @@ export function recordVerification(
   state.lastVerification = record;
 }
 
-/** True when this exact snippet already failed against this goal state. */
+/** True when this exact snippet already failed against this goal state.
+ * When `sourceHash` is supplied, the prior failure must share it, so an edit
+ * that leaves the goal text unchanged (e.g. adding an import) does not lock
+ * out a now-valid retry. */
 export function hasFailedBefore(
   state: LeanSessionState,
   goalFingerprint: string,
   snippet: string,
+  sourceHash?: string,
 ): ProofAttempt | undefined {
   return state.failedAttempts.find(
     (entry) =>
-      entry.goalFingerprint === goalFingerprint && entry.snippet === snippet,
+      entry.goalFingerprint === goalFingerprint &&
+      entry.snippet === snippet &&
+      entry.sourceHash === sourceHash,
   );
 }
 
-/** Failures recorded against the given goal fingerprint, newest last. */
+/** Failures recorded against the given goal fingerprint, newest last.
+ * When `sourceHash` is supplied, only failures with that source hash are
+ * returned, so the "previous failures" view matches the live source. */
 export function failuresForGoal(
   state: LeanSessionState,
   goalFingerprint: string,
+  sourceHash?: string,
 ): ProofAttempt[] {
   return state.failedAttempts.filter(
-    (entry) => entry.goalFingerprint === goalFingerprint,
+    (entry) =>
+      entry.goalFingerprint === goalFingerprint &&
+      entry.sourceHash === sourceHash,
   );
 }
 

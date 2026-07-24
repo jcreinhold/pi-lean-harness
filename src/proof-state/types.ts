@@ -25,6 +25,11 @@ export interface ProofAttempt {
   declaration: string;
   /** Fingerprint of the goal state the snippet ran against. */
   goalFingerprint: string;
+  /** sha256 of the focus file's bytes when this attempt ran, so a failed
+   * snippet is only deduplicated against the *same* source — an import or
+   * statement edit that leaves the goal text unchanged must not suppress a
+   * now-valid retry. */
+  sourceHash?: string;
   snippet: string;
   outcome: AttemptOutcome;
   /** First diagnostic message or short summary, when relevant. */

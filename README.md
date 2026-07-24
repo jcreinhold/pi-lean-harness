@@ -66,7 +66,11 @@ All five tools share a `LeanSessionState` (focus, source/goal fingerprints,
 successful steps, failed attempts, last verification). Snapshots travel in
 tool-result details, so the state follows the session branch across forks,
 compaction, and reloads. Repeated failed tactics are skipped automatically
-when the goal hasn't changed.
+when the goal *and the source* haven't changed — an edit that leaves the goal
+text unchanged (e.g. adding an import to resolve a name) correctly unlocks a
+now-valid retry. When the lean-host-mcp worker is recycled mid-call (which
+can turn a valid verdict into a spurious failure on heavy modules), the
+harness retries the call once automatically.
 
 ## Configuration
 
