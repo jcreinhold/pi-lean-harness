@@ -50,6 +50,15 @@ export interface LeanApplyParams {
    * inserts; "replace" always replaces the boundary tactic's source span.
    */
   mode?: "auto" | "insert" | "replace";
+  /**
+   * Skip the in-memory trial (Step 3) and go straight to splice + verify +
+   * rollback. Use this for a multi-line proof body being committed in one
+   * transaction: the trial re-test is a fail-fast optimization that can
+   * misparse multi-line terms, and `lean_verify` is the real safety gate
+   * (a failed verification rolls the file back to its original bytes). When
+   * true, `require` is ignored (there is no trial verdict to check).
+   */
+  skipTrial?: boolean;
   file?: string;
   declaration?: string;
   proofPosition?: ProofPositionSelector;
@@ -148,65 +157,71 @@ export async function leanApply(
     );
   }
 
-  // Step 3: test the exact candidate.
-  const trial = await withRecycleRetry(async () =>
-    requireData(
-      await harness.client.trialProofStep(
-        {
-          file: focus.file,
-          declaration: focus.declaration,
-          snippets: [params.candidate],
-          proofPosition: focus.proofPosition,
-        },
-        signal,
+  // Step 3: test the exact candidate — unless the caller asked to skip the
+  // trial. `skipTrial` is for committing a multi-line proof body in one
+  // transaction: the trial re-test can misparse multi-line terms, and the
+  // verify gate (Step 6) plus rollback (Step 7) is the real safety net.
+  let warningsText = "";
+  if (!params.skipTrial) {
+    const trial = await withRecycleRetry(async () =>
+      requireData(
+        await harness.client.trialProofStep(
+          {
+            file: focus.file,
+            declaration: focus.declaration,
+            snippets: [params.candidate],
+            proofPosition: focus.proofPosition,
+          },
+          signal,
+        ),
+        "lean_trial(proof_step)",
       ),
-      "lean_trial(proof_step)",
-    ),
-  );
-  const candidate = trial.data.candidates[0];
-  const warningsText = formatWarnings(trial.warnings);
-
-  if (!candidate) {
-    throw new Error(
-      "lean-host-mcp returned no trial result for the candidate.",
     );
-  }
+    const candidate = trial.data.candidates[0];
+    warningsText = formatWarnings(trial.warnings);
 
-  const firstError = candidate.diagnostics?.diagnostics.find(
-    (d) => d.severity === "error",
-  );
-  recordAttempt(harness.state, {
-    file: focus.file,
-    declaration: focus.declaration,
-    goalFingerprint: goalFp,
-    sourceHash: currentHash,
-    snippet: params.candidate,
-    outcome: candidate.status,
-    message: firstError?.message,
-  });
+    if (!candidate) {
+      throw new Error(
+        "lean-host-mcp returned no trial result for the candidate.",
+      );
+    }
 
-  // Step 4: refuse failed or non-progressing candidates.
-  if (
-    candidate.status === "closed"
-      ? false
-      : requireClose || candidate.status !== "progressed"
-  ) {
-    return {
-      applied: false,
-      reason:
-        candidate.status === "progressed"
-          ? "insufficient_progress"
-          : "trial_failed",
-      trialStatus: candidate.status,
-      rolledBack: false,
-      focus,
-      diagnostics: candidate.diagnostics?.diagnostics,
-      warningsText,
-      message:
-        candidate.status === "progressed"
-          ? 'Candidate made progress but did not close the goal; re-apply with require: "make_progress" if that is intended.'
-          : `Candidate failed in trial (${candidate.status}) and was not applied.`,
-    };
+    const firstError = candidate.diagnostics?.diagnostics.find(
+      (d) => d.severity === "error",
+    );
+    recordAttempt(harness.state, {
+      file: focus.file,
+      declaration: focus.declaration,
+      goalFingerprint: goalFp,
+      sourceHash: currentHash,
+      snippet: params.candidate,
+      outcome: candidate.status,
+      message: firstError?.message,
+    });
+
+    // Step 4: refuse failed or non-progressing candidates.
+    if (
+      candidate.status === "closed"
+        ? false
+        : requireClose || candidate.status !== "progressed"
+    ) {
+      return {
+        applied: false,
+        reason:
+          candidate.status === "progressed"
+            ? "insufficient_progress"
+            : "trial_failed",
+        trialStatus: candidate.status,
+        rolledBack: false,
+        focus,
+        diagnostics: candidate.diagnostics?.diagnostics,
+        warningsText,
+        message:
+          candidate.status === "progressed"
+            ? 'Candidate made progress but did not close the goal; re-apply with require: "make_progress" if that is intended.'
+            : `Candidate failed in trial (${candidate.status}) and was not applied.`,
+      };
+    }
   }
 
   // Step 5: apply the exact tested text atomically.

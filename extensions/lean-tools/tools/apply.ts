@@ -40,6 +40,15 @@ const parameters = Type.Object({
         "always replaces the boundary tactic's source span.",
     }),
   ),
+  skipTrial: Type.Optional(
+    Type.Boolean({
+      description:
+        "Skip the in-memory trial and go straight to splice + verify + rollback. " +
+        "Use this to commit a multi-line proof body (replacing a `sorry` scaffold) in one " +
+        "transaction: the trial re-test can misparse multi-line terms, while lean_verify " +
+        "is the real safety gate. When true, `require` is ignored.",
+    }),
+  ),
   ...focusFields,
 });
 
@@ -59,13 +68,15 @@ export function createLeanApplyTool(getHarness: () => LeanHarness) {
       "Commit a proof step: re-test the candidate at the focused position, apply the " +
       "exact tested text atomically, verify the containing declaration, and roll back " +
       "on verification failure (per the apply.onVerifyFailure setting). Refuses to run " +
-      "when the file or goal changed since the last lean_state/lean_try.",
+      "when the file or goal changed since the last lean_state/lean_try. Set " +
+      "skipTrial to commit a multi-line proof body without the trial re-test.",
     promptSnippet:
       "Atomically apply a tested tactic, verify the declaration, roll back on failure",
     promptGuidelines: [
-      "Use lean_apply only with candidates that already succeeded in lean_try during this proof state.",
+      "For a multi-step proof, scaffold the declaration with `sorry`, then call lean_apply with skipTrial: true and the full proof body as the candidate. This splices the body, verifies the declaration, and rolls back on failure — one transaction, no per-tactic round-trips.",
+      "Use lean_apply without skipTrial only for a single tactic that already succeeded in lean_try during this proof state.",
       "After a successful lean_apply, call lean_state again before the next step: the goal and fingerprints have changed.",
-      'A `sorry`/`admit` tactic at the focused boundary is replaced by the candidate (filling the scaffold); anything else is inserted alongside. When a prefix candidate succeeds, apply it with require "make_progress" and re-observe with lean_state instead of bundling many steps into one candidate.',
+      "A `sorry`/`admit` tactic at the focused boundary is replaced by the candidate (filling the scaffold); anything else is inserted alongside.",
     ],
     executionMode: "sequential",
     parameters,
@@ -94,6 +105,7 @@ export function createLeanApplyTool(getHarness: () => LeanHarness) {
           candidate: params.candidate,
           require: params.require,
           mode: params.mode,
+          skipTrial: params.skipTrial,
           file: stripAt(params.file),
           declaration: params.declaration,
           proofPosition: toProofPosition(params.proofPosition),

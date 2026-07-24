@@ -203,6 +203,44 @@ describe("leanApply", () => {
     ).toBe(true);
   });
 
+  it("commits a multi-line proof body with skipTrial, verifying and rolling\n  back on failure", async () => {
+    verifyStatus = "verified";
+    const harness = await makeHarness("rollback");
+    const result = await leanApply(harness, {
+      candidate: "have h : True := trivial\n  trivial",
+      skipTrial: true,
+    });
+    expect(result.applied).toBe(true);
+    if (result.applied) {
+      expect(result.edit.mode).toBe("replace");
+      expect(result.edit.replacedText).toBe("sorry");
+    }
+    const content = await readFile(join(dir, "Test.lean"), "utf8");
+    expect(content).toBe(
+      "theorem foo : True := by\n  have h : True := trivial\n  trivial\n",
+    );
+    // No lean_trial call was made: skipTrial bypasses the trial re-test.
+    const trialCalls = backend.calls.filter((c) => c.name === "lean_trial");
+    expect(trialCalls).toHaveLength(0);
+  });
+
+  it("rolls back a skipTrial multi-line body when verification fails", async () => {
+    verifyStatus = "has_unresolved_goals";
+    const harness = await makeHarness("rollback");
+    const result = await leanApply(harness, {
+      candidate: "have h : True := trivial\n  sorry",
+      skipTrial: true,
+    });
+    expect(result.applied).toBe(false);
+    if (!result.applied) {
+      expect(result.reason).toBe("verification_failed");
+      expect(result.rolledBack).toBe(true);
+    }
+    expect(await readFile(join(dir, "Test.lean"), "utf8")).toBe(SOURCE);
+    const trialCalls = backend.calls.filter((c) => c.name === "lean_trial");
+    expect(trialCalls).toHaveLength(0);
+  });
+
   it("records backend calls through the transaction", async () => {
     const harness = await makeHarness("rollback");
     await leanApply(harness, { candidate: "trivial" });
