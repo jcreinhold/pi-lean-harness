@@ -1,21 +1,18 @@
 # pi-lean-harness
 
-A [Pi](https://github.com/badlogic/pi-mono) extension that gives the agent a
-small, stateful Lean 4 proof toolkit. It wraps
-[`lean-host-mcp`](https://github.com/jcreinhold/lean-host-mcp) behind five
-native tools that share one proof focus, one goal fingerprint, and one ledger
-of proof attempts — and it owns the transactional parts a raw MCP server
+A [Pi](https://github.com/badlogic/pi-mono) extension that gives the agent a small, stateful Lean 4 proof toolkit. It
+wraps [`lean-host-mcp`](https://github.com/jcreinhold/lean-host-mcp) behind five native tools that share one proof
+focus, one goal fingerprint, and one ledger of proof attempts — and it owns the transactional parts a raw MCP server
 cannot: freshness checks, atomic source edits, verification, and rollback.
 
-The agent never sees raw MCP tools and never chooses between "MCP", "LSP", or
-"shell". It sees only:
+The agent never sees raw MCP tools and never chooses between "MCP", "LSP", or "shell". It sees only:
 
-| Tool          | What it does |
-| ------------- | ------------ |
-| `lean_state`  | Current proof situation: goals, diagnostics, source freshness, and previous failed attempts for the focused declaration. Also sets the shared focus. |
+| Tool | What it does |
+| --- | --- |
+| `lean_state` | Current proof situation: goals, diagnostics, source freshness, and previous failed attempts for the focused declaration. Also sets the shared focus. |
 | `lean_search` | Ranked lemmas/definitions for the current goal (or explicit goal text) with exact types, match reasons, suggested tactics, docstrings, and usage examples. `names: [...]` inspects declarations directly (exact statements/attributes) — use it instead of guessing lemma or `@[simps]` projection names. |
-| `lean_try`    | Non-mutating tactic trials against the focused goal. Batched, deduplicated against the ledger, outcomes recorded. |
-| `lean_apply`  | Compound transaction: re-test → freshness check → atomic edit → verify → rollback on failure. The only tool that writes source. |
+| `lean_try` | Non-mutating tactic trials against the focused goal. Batched, deduplicated against the ledger, outcomes recorded. |
+| `lean_apply` | Compound transaction: re-test → freshness check → atomic edit → verify → rollback on failure. The only tool that writes source. |
 | `lean_verify` | Verification gate for the focused declaration, an explicit declaration, a file, or the git-changed set. |
 
 ## Setup
@@ -42,8 +39,8 @@ The agent never sees raw MCP tools and never chooses between "MCP", "LSP", or
    ```
    or run `pi` from a local checkout during development.
 
-4. Load the included `lean-proof-workflow` skill (shipped via `pi.skills`) so
-   the agent learns the state → search → try → apply → verify loop.
+4. Load the included `lean-proof-workflow` skill (shipped via `pi.skills`) so the agent learns the state → search → try
+   → apply → verify loop.
 
 ## The proof protocol
 
@@ -62,15 +59,12 @@ lean_apply(candidate)
   8. Record the outcome in the proof ledger.
 ```
 
-All five tools share a `LeanSessionState` (focus, source/goal fingerprints,
-successful steps, failed attempts, last verification). Snapshots travel in
-tool-result details, so the state follows the session branch across forks,
-compaction, and reloads. Repeated failed tactics are skipped automatically
-when the goal *and the source* haven't changed — an edit that leaves the goal
-text unchanged (e.g. adding an import to resolve a name) correctly unlocks a
-now-valid retry. When the lean-host-mcp worker is recycled mid-call (which
-can turn a valid verdict into a spurious failure on heavy modules), the
-harness retries the call once automatically.
+All five tools share a `LeanSessionState` (focus, source/goal fingerprints, successful steps, failed attempts, last
+verification). Snapshots travel in tool-result details, so the state follows the session branch across forks,
+compaction, and reloads. Repeated failed tactics are skipped automatically when the goal *and the source* haven't
+changed — an edit that leaves the goal text unchanged (e.g. adding an import to resolve a name) correctly unlocks a
+now-valid retry. When the lean-host-mcp worker is recycled mid-call (which can turn a valid verdict into a spurious
+failure on heavy modules), the harness retries the call once automatically.
 
 ## Configuration
 
@@ -90,41 +84,34 @@ Config file (`lean-harness` scope; see `schema.json`):
 }
 ```
 
-- `apply.onVerifyFailure`: `"rollback"` (default) restores original bytes
-  when post-edit verification fails; `"keep"` leaves the unverified edit.
+- `apply.onVerifyFailure`: `"rollback"` (default) restores original bytes when post-edit verification fails; `"keep"`
+  leaves the unverified edit.
 - Interactive toggles: `/lean-harness:settings`.
 
 ## Commands
 
 - `/lean-harness:settings` — toggle tools and the apply failure policy.
-- `/lean-debug [status|raw-tools|focus|ledger]` — human-only inspection of the
-  connection, backend tool list, current focus, and the proof ledger.
+- `/lean-debug [status|raw-tools|focus|ledger]` — human-only inspection of the connection, backend tool list, current
+  focus, and the proof ledger.
 
 ## Environment
 
-No environment variables are read by the extension itself. The backend honors
-its own (e.g. `LEAN_HOST_MCP_RESPONSE_CARRIER`); the extension parses both the
-default text carrier and structured content.
+No environment variables are read by the extension itself. The backend honors its own (e.g.
+`LEAN_HOST_MCP_RESPONSE_CARRIER`); the extension parses both the default text carrier and structured content.
 
 ## Limitations
 
-- **HTTP transport only.** The extension attaches to an already-running
-  server; it does not autostart or supervise `lean-host-mcp` (no PID locking,
-  log capture, or crash recovery).
-- **One focus at a time.** The shared focus is a single declaration/proof
-  position per session branch.
-- **Boundary-local edits.** `lean_apply` inserts new tactic lines at proof
-  boundaries; the one exception is a `sorry`/`admit` placeholder at the
-  focused boundary, which the candidate *replaces* (filling a scaffolded
-  proof). Verification is scoped to the focused declaration, so unrelated
-  sorries elsewhere in the file do not block an apply. `mode: "replace"`
-  forces span replacement for any boundary tactic.
-- **Backend version lock.** The capability check requires the five semantic
-  tools (`lean_context`, `lean_trial`, `lean_verify`, `lean_lookup`,
-  `lean_status`); older servers fail fast with a clear error.
-- Raw backend tools are never registered with the agent (`exposeRawBackendTools`
-  is reserved for a future debug surface). Use `/lean-debug raw-tools` to
-  inspect the backend as a human.
+- **HTTP transport only.** The extension attaches to an already-running server; it does not autostart or supervise
+  `lean-host-mcp` (no PID locking, log capture, or crash recovery).
+- **One focus at a time.** The shared focus is a single declaration/proof position per session branch.
+- **Boundary-local edits.** `lean_apply` inserts new tactic lines at proof boundaries; the one exception is a
+  `sorry`/`admit` placeholder at the focused boundary, which the candidate *replaces* (filling a scaffolded proof).
+  Verification is scoped to the focused declaration, so unrelated sorries elsewhere in the file do not block an apply.
+  `mode: "replace"` forces span replacement for any boundary tactic.
+- **Backend version lock.** The capability check requires the five semantic tools (`lean_context`, `lean_trial`,
+  `lean_verify`, `lean_lookup`, `lean_status`); older servers fail fast with a clear error.
+- Raw backend tools are never registered with the agent (`exposeRawBackendTools` is reserved for a future debug
+  surface). Use `/lean-debug raw-tools` to inspect the backend as a human.
 
 ## Development
 
@@ -135,6 +122,5 @@ pnpm lint
 pnpm test
 ```
 
-Tests run against a fake MCP backend (a real Streamable HTTP server built on
-the MCP SDK with canned envelopes), covering normalization, capabilities, the
-ledger, edit transactions, and both rollback policies.
+Tests run against a fake MCP backend (a real Streamable HTTP server built on the MCP SDK with canned envelopes),
+covering normalization, capabilities, the ledger, edit transactions, and both rollback policies.
