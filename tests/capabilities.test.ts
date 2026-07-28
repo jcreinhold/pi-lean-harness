@@ -38,6 +38,24 @@ describe("checkCapabilities", () => {
     expect(report.tools.sort()).toEqual([...ALL_TOOLS].sort());
     expect(report.projectRoot).toBe("/fake/project");
     expect(report.toolchain).toBe("leanprover/lean4:v4.30.0");
+    expect(report.leanMaxMemoryKib).toBe(18874368);
+    await client.close();
+  });
+
+  it("leaves the heap ceiling unset when the broker block omits it", async () => {
+    const handlers = Object.fromEntries(
+      ALL_TOOLS.map((name) => [
+        name,
+        () => ok({ ...PROJECT_STATUS, broker: {} }),
+      ]),
+    );
+    backend = await startFakeBackend({ handlers });
+    const client = new LeanBackendClient({
+      url: backend.url,
+      requestTimeoutMs: 5000,
+    });
+    const report = await checkCapabilities(client);
+    expect(report.leanMaxMemoryKib).toBeUndefined();
     await client.close();
   });
 

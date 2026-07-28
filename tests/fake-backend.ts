@@ -172,6 +172,6 @@ export const PROJECT_STATUS = {
   lean_toolchain: "leanprover/lean4:v4.30.0",
   include: [],
   worker_opened: false,
-  broker: {},
+  broker: { lean_max_memory_kib: 18874368 },
   output: { response_carrier: "content", telemetry_verbosity: "compact" },
 };

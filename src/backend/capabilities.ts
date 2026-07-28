@@ -22,6 +22,12 @@ export interface CapabilitiesReport {
   projectRoot?: string;
   /** Lean toolchain reported by the server. */
   toolchain?: string;
+  /**
+   * Per-worker Lean heap ceiling (`broker.lean_max_memory_kib`), reported by
+   * lean-host-mcp >= 0.8.0. Crossing it surfaces as an ordinary elaboration
+   * failure, so the number is useful context when a big import keeps dying.
+   */
+  leanMaxMemoryKib?: number;
 }
 
 /**
@@ -55,6 +61,14 @@ export async function checkCapabilities(
         report.projectRoot = data.project_root;
       if (typeof data.lean_toolchain === "string")
         report.toolchain = data.lean_toolchain;
+      // Additive in lean-host-mcp 0.8.0; absent (or an empty `broker` block)
+      // on older servers, which is fine — the ceiling is advisory.
+      const broker = data.broker;
+      if (broker !== null && typeof broker === "object") {
+        const kib = (broker as Record<string, unknown>).lean_max_memory_kib;
+        if (typeof kib === "number" && Number.isFinite(kib))
+          report.leanMaxMemoryKib = kib;
+      }
     }
   } catch {
     // Status probing is best-effort; the tool check above is the hard gate.

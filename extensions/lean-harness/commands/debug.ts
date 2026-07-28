@@ -26,12 +26,17 @@ export function registerLeanDebugCommand(pi: ExtensionAPI): void {
           case "status": {
             const caps = await harness.ensureReady();
             const config = harness.getConfig();
+            const ceiling =
+              caps.leanMaxMemoryKib !== undefined
+                ? formatKib(caps.leanMaxMemoryKib)
+                : "not reported (lean-host-mcp < 0.8.0)";
             ctx.ui.notify(
               [
                 "lean-harness status",
                 `  server: ${config.server.url} (connected)`,
                 `  project: ${caps.projectRoot ?? "unknown"}`,
                 `  toolchain: ${caps.toolchain ?? "unknown"}`,
+                `  lean heap ceiling: ${ceiling} per worker`,
                 `  backend tools: ${caps.tools.join(", ")}`,
                 `  focus: ${formatFocus(harness)}`,
               ].join("\n"),
@@ -91,4 +96,11 @@ function formatFocus(
   const focus = harness.state.focus;
   if (!focus) return "no proof focus set";
   return `${focus.declaration} @ ${focus.file} (position: ${JSON.stringify(focus.proofPosition)})`;
+}
+
+/** Render a KiB quantity as GiB (>= 1 GiB) or MiB, matching server units. */
+function formatKib(kib: number): string {
+  const mib = kib / 1024;
+  if (mib >= 1024) return `${(mib / 1024).toFixed(1)} GiB`;
+  return `${Math.round(mib)} MiB`;
 }
