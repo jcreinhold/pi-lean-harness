@@ -189,6 +189,8 @@ export class LeanBackendClient {
       file: string;
       declaration: string;
       proofPosition?: ProofPositionSelector;
+      /** Opt in to the server's proof-boundary list (needed by lean_apply). */
+      includeBoundaries?: boolean;
     },
     signal?: AbortSignal,
   ): Promise<SemanticEnvelope<ProofContextData>> {
@@ -199,6 +201,7 @@ export class LeanBackendClient {
         file: args.file,
         declaration: args.declaration,
         proof_position: args.proofPosition ?? { kind: "default" },
+        ...(args.includeBoundaries ? { include_boundaries: true } : {}),
       }),
       signal,
     );

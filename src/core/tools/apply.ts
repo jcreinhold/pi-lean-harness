@@ -139,6 +139,7 @@ export async function leanApply(
             file: focus.file,
             declaration: focus.declaration,
             proofPosition: focus.proofPosition,
+            includeBoundaries: true,
           },
           signal,
         ),
