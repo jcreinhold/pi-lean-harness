@@ -20,6 +20,8 @@ export interface FakeBackend {
   url: string;
   /** Recorded calls, in order. */
   calls: Array<{ name: string; args: Record<string, unknown> }>;
+  /** Forget every live MCP session, simulating a lean-host-mcp restart. */
+  dropSessions: () => void;
   close: () => Promise<void>;
 }
 
@@ -32,18 +34,24 @@ export async function startFakeBackend(
   options: FakeBackendOptions,
 ): Promise<FakeBackend> {
   const calls: FakeBackend["calls"] = [];
-  const server = new McpServer({
-    name: "fake-lean-host-mcp",
-    version: "0.0.0",
-  });
-
-  for (const [name, handler] of Object.entries(options.handlers)) {
-    server.registerTool(name, { description: `fake ${name}` }, (args) => {
-      calls.push({ name, args: args as Record<string, unknown> });
-      const envelope = handler(args as Record<string, unknown>);
-      return { content: [{ type: "text", text: JSON.stringify(envelope) }] };
+  // One McpServer per session transport: the SDK's Protocol.connect rejects a
+  // second connection on the same instance, and session recovery after a
+  // server-side restart needs a fresh initialize to succeed.
+  const makeServer = (): McpServer => {
+    const server = new McpServer({
+      name: "fake-lean-host-mcp",
+      version: "0.0.0",
     });
-  }
+
+    for (const [name, handler] of Object.entries(options.handlers)) {
+      server.registerTool(name, { description: `fake ${name}` }, (args) => {
+        calls.push({ name, args: args as Record<string, unknown> });
+        const envelope = handler(args as Record<string, unknown>);
+        return { content: [{ type: "text", text: JSON.stringify(envelope) }] };
+      });
+    }
+    return server;
+  };
 
   const transports = new Map<string, StreamableHTTPServerTransport>();
   const httpServer: Server = createServer((req, res) => {
@@ -64,12 +72,15 @@ export async function startFakeBackend(
         transport.onclose = () => {
           if (transport.sessionId) transports.delete(transport.sessionId);
         };
-        await server.connect(transport);
+        const mcpServer = makeServer();
+        await mcpServer.connect(transport);
         await transport.handleRequest(req, res, JSON.parse(body));
         return;
       }
-      res.writeHead(400, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: "bad request: no valid session" }));
+      // Mirror lean-host-mcp: an unknown `Mcp-Session-Id` is rejected with
+      // HTTP 404, which the MCP spec answers with a fresh initialize.
+      res.writeHead(404, { "content-type": "text/plain" });
+      res.end("Not Found: Session not found");
     })().catch(() => {
       if (!res.headersSent) res.writeHead(500);
       res.end();
@@ -92,6 +103,9 @@ export async function startFakeBackend(
   return {
     url: `http://127.0.0.1:${port}/mcp`,
     calls,
+    dropSessions: () => {
+      transports.clear();
+    },
     close: () =>
       new Promise((resolve, reject) => {
         for (const socket of sockets) socket.destroy();

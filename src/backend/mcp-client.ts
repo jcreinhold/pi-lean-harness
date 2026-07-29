@@ -109,10 +109,40 @@ export class LeanBackendClient {
     return result.tools.map((tool) => tool.name);
   }
 
+  /** Drop the current session (if any) and establish a fresh one. */
+  private async reconnect(): Promise<void> {
+    const client = this.client;
+    this.client = null;
+    if (client) {
+      // The old session is already gone server-side; ignore close errors.
+      await client.close().catch(() => undefined);
+    }
+    await this.connect();
+  }
+
+  private async invoke(
+    client: Client,
+    name: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<RawCallResult> {
+    return (await client.callTool({ name, arguments: args }, undefined, {
+      timeout: this.options.requestTimeoutMs,
+      signal,
+    })) as RawCallResult;
+  }
+
   /**
    * Call a raw server tool and return the parsed semantic envelope.
    * Prefers `structuredContent`; falls back to JSON in text content (the
    * server's default response carrier).
+   *
+   * The MCP spec (Streamable HTTP) requires a client that receives HTTP 404
+   * on a request carrying an `Mcp-Session-Id` to start a new session with a
+   * fresh initialize request. The SDK transport does not do this itself
+   * (modelcontextprotocol/typescript-sdk#1708), so a stale session after a
+   * lean-host-mcp restart is recovered here by reconnecting once and
+   * retrying the call.
    */
   async callTool<T = unknown>(
     name: string,
@@ -120,23 +150,36 @@ export class LeanBackendClient {
     signal?: AbortSignal,
   ): Promise<SemanticEnvelope<T>> {
     const client = await this.requireClient();
-    let raw: RawCallResult;
     try {
-      raw = (await client.callTool({ name, arguments: args }, undefined, {
-        timeout: this.options.requestTimeoutMs,
-        signal,
-      })) as RawCallResult;
+      return parseEnvelope<T>(
+        await this.invoke(client, name, args, signal),
+        name,
+      );
     } catch (error) {
       if (error instanceof LeanBackendError) throw error;
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = errorMessage(error);
+      if (!isStaleSessionError(detail)) {
+        throw new LeanBackendError(
+          `lean-host-mcp call ${name} failed: ${detail}`,
+          { retryable: true },
+        );
+      }
+    }
+    await this.reconnect();
+    try {
+      const fresh = await this.requireClient();
+      return parseEnvelope<T>(
+        await this.invoke(fresh, name, args, signal),
+        name,
+      );
+    } catch (error) {
+      if (error instanceof LeanBackendError) throw error;
+      const detail = errorMessage(error);
       throw new LeanBackendError(
-        `lean-host-mcp call ${name} failed: ${detail}`,
-        {
-          retryable: true,
-        },
+        `lean-host-mcp call ${name} failed after session reconnect: ${detail}`,
+        { retryable: true },
       );
     }
-    return parseEnvelope<T>(raw, name);
   }
 
   // --- Typed wrappers for the five backend tools -------------------------
@@ -259,6 +302,15 @@ export class LeanBackendClient {
     }
     return this.client;
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** True when the server rejected our `Mcp-Session-Id` (HTTP 404 after a restart). */
+function isStaleSessionError(detail: string): boolean {
+  return /session not found/i.test(detail);
 }
 
 function parseEnvelope<T>(
