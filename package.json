@@ -70,7 +70,7 @@
     "ts-json-schema-generator": "^2.9.0",
     "typebox": "^1.0.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.11"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
